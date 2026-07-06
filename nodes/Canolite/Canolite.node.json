@@ -1,0 +1,18 @@
+{
+  "node": "n8n-nodes-canolite",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Marketing", "Media & Content"],
+  "resources": {
+    "credentialDocumentation": [
+      {
+        "url": "https://github.com/AakashKhambhaliya/canolite#api-reference"
+      }
+    ],
+    "primaryDocumentation": [
+      {
+        "url": "https://github.com/AakashKhambhaliya/canolite#api-reference"
+      }
+    ]
+  }
+}
