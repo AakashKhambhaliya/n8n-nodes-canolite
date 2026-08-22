@@ -1,18 +1,20 @@
 {
   "name": "n8n-nodes-canolite",
-  "version": "1.0.3",
-  "description": "n8n community node for Canolite — self-hosted template-to-image generation platform",
+  "version": "1.1.0",
+  "description": "n8n community node for Canolite — self-hosted template-to-image and video generation platform",
   "keywords": [
     "n8n-community-node-package",
     "n8n-nodes",
     "canolite",
     "image-generation",
-    "template-to-image"
+    "template-to-image",
+    "video-generation"
   ],
   "license": "MIT",
   "homepage": "https://github.com/AakashKhambhaliya/canolite",
   "author": {
-    "name": "Canolite Community"
+    "name": "Aakash Khambhaliya",
+    "email": "162181664+AakashKhambhaliya@users.noreply.github.com"
   },
   "repository": {
     "type": "git",
@@ -49,6 +51,6 @@
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "n8n-workflow": "^2.28.4"
+    "n8n-workflow": "*"
   }
 }

@@ -77,7 +77,7 @@ export const imageGenerateDescription: INodeProperties[] = [
 				description: 'Whether to automatically poll until the render is complete',
 			},
 			{
-				displayName: 'Poll Interval (ms)',
+				displayName: 'Poll Interval (Ms)',
 				name: 'pollInterval',
 				type: 'number',
 				default: 2000,

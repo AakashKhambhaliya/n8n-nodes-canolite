@@ -8,6 +8,7 @@ import {
 } from 'n8n-workflow';
 import { imageDescription } from './resources/image';
 import { templateDescription } from './resources/template';
+import { videoDescription } from './resources/video';
 
 export class Canolite implements INodeType {
 	methods = {
@@ -62,7 +63,7 @@ export class Canolite implements INodeType {
 		group: ['output'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Generate images from templates using the Canolite API',
+		description: 'Generate images and videos from templates using the Canolite API',
 		defaults: {
 			name: 'Canolite',
 		},
@@ -97,11 +98,16 @@ export class Canolite implements INodeType {
 						name: 'Template',
 						value: 'template',
 					},
+					{
+						name: 'Video',
+						value: 'video',
+					},
 				],
 				default: 'image',
 			},
 			...imageDescription,
 			...templateDescription,
+			...videoDescription,
 		],
 	};
 }

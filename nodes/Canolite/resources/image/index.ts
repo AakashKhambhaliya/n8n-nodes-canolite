@@ -30,7 +30,7 @@ export const imageDescription: INodeProperties[] = [
 						url: '=/v1/images',
 					},
 					output: {
-						postReceive: [pollForRenderCompletion],
+						postReceive: [pollForRenderCompletion('image')],
 					},
 				},
 			},

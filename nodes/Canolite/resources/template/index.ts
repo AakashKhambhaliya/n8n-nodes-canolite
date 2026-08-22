@@ -29,8 +29,8 @@ export const templateDescription: INodeProperties[] = [
 			{
 				name: 'Get Many',
 				value: 'getAll',
-				action: 'Get all templates',
-				description: 'Retrieve all templates',
+				action: 'Get many templates',
+				description: 'Retrieve many templates',
 				routing: {
 					request: {
 						method: 'GET',
