@@ -37,148 +37,143 @@ You need a Canolite API key. Create one in your Canolite dashboard under **API K
 
 ---
 
-## Supported Operations
+## How the node is laid out
 
-### 🖼️ Image Resource
+Every job follows the same four steps, top to bottom:
 
-| Operation               | Description                                                         |
-|------------------------|---------------------------------------------------------------------|
-| **Generate**            | Generate a single image asynchronously (returns queued job UID)     |
-| **Generate (Synchronous)** | Generate a single image and wait for the result (returns image URL) |
-| **Batch Generate**      | Generate multiple images from a template in one request (up to 500) |
-| **Get Status**          | Check the status of a previously submitted render job               |
+**Resource** → **Operation** → **Template** → **Fields**
 
-### 🎬 Video Resource
+1. **Resource** — `Image` or `Video`
+2. **Operation** — `Single Request`, `Synchronous Request`, `Batch Request` or `Get Status`
+3. **Template** — pick it from the list, or switch to **By ID** to paste/expression a `tmpl_...`
+4. **Fields** — the template's own objects, loaded live and rendered as one labelled input each
 
-Requires **Canolite 1.8+** and a template containing a video layer.
+Nothing else is required. Encoder settings and the webhook live below that, and
+**Options** stays collapsed until you want it.
 
-| Operation          | Description                                                        |
-|--------------------|--------------------------------------------------------------------|
-| **Generate**       | Render a single MP4 (returns a queued job UID)                      |
-| **Batch Generate** | Render up to 20 videos from one template in a single request        |
-| **Get Status**     | Check a video render's status and progress                          |
+### Operations
 
-There is no synchronous video operation. Encoding takes far too long to hold a
-request open, so every video render is queued and answered with a job UID —
-enable **Wait for Completion** to have the node poll for you.
+| Operation               | What it does                                                                 |
+|-------------------------|------------------------------------------------------------------------------|
+| **Single Request**      | Queues one render and returns its job UID straight away                       |
+| **Synchronous Request** | Waits for the render and returns the finished `image_url` / `video_url`       |
+| **Batch Request**       | Queues many renders from one template — up to 500 images, or 20 videos        |
+| **Get Status**          | Looks up a queued render by its job UID                                       |
 
-### 📄 Template Resource
+The two resources offer the same four operations. What differs:
 
-| Operation    | Description                         |
-|-------------|-------------------------------------|
-| **Get**      | Retrieve a specific template        |
-| **Get Many** | Retrieve all templates              |
+- **Image** adds **Format** (PNG / JPEG / WebP), **Quality** (1-100) and **Scale** (1-3)
+- **Video** adds **Frame Rate** (1-60), **Duration** and a **Quality** preset (High / Balanced / Small), and requires **Canolite 1.8+** with a template that contains a video layer
 
-Both return `has_video`, so you can branch a workflow on whether a template can
-produce an MP4.
+Image and video jobs live on separate endpoints, so an `img_` UID is not found
+under **Video → Get Status**, and a `vid_` UID is not found under **Image**.
 
 ---
 
-## Usage Examples
+## Fields
 
-### Generate an Image (Synchronous)
+Choosing a template loads its objects and renders one input per object, typed to
+match: a text layer gets a text box, an image or video layer gets a URL box, and
+a shape gets a colour. Text layers arrive pre-filled with whatever the template
+already says, so you only change what you mean to change.
 
-1. Add the **Canolite** node
-2. Select **Image** → **Generate (Synchronous)**
-3. Set **Template ID** to your template (e.g. `tmpl_abc123`)
-4. Add **Modifications** — for each text/image object you want to change:
-   - **Name**: the object name from your template
-   - **Text**: replacement text (for text objects)
-   - **Image URL**: replacement image URL (for image objects)
-5. Optionally set **Format** (PNG/JPEG/WebP), **Quality** (1-100), **Scale** (1-3)
-6. Execute — the node waits and returns the `image_url` directly
+Less common overrides are one click away under **Add field** rather than always
+on screen:
 
-### Generate an Image (Async)
+| Object type | Always shown  | Under **Add field**                                          |
+|-------------|---------------|--------------------------------------------------------------|
+| Text        | the text      | Font Size, Colour                                            |
+| Image       | Image URL     | —                                                            |
+| Video       | Video URL     | Trim Start, Trim End, Start At, Volume, Muted, Loop          |
+| Shape       | —             | the fill colour                                              |
 
-1. Select **Image** → **Generate**
-2. Configure the same fields as above
-3. Under **Options**, enable **Wait for Completion**
-4. Set **Poll Interval** and **Max Poll Attempts** as needed
-5. The node will automatically poll until the render completes or times out
+Leave a field empty and it is left out of the request entirely, which the API
+reads as "keep whatever the template has". That is also why **Format**,
+**Quality**, **Scale** and **Duration** default to an inherit marker
+(`Template Default` / `0`) — sending `""` or `0` would be rejected, so the node
+omits the key instead.
 
-### Batch Generate Images
+`image_url` and `video_url` must be publicly reachable http(s) URLs. The API
+blocks private and loopback addresses, dropping such a change with a warning
+rather than fetching it.
 
-1. Select **Image** → **Batch Generate**
-2. Set **Template ID**
-3. Add **Items** — each item has its own set of modifications and optional webhook URL
-4. Configure shared **Format**, **Quality**, **Scale**
-5. Execute — returns a batch UID and individual render UIDs
-
-### Check Render Status
-
-1. Select **Image** → **Get Status**
-2. Enter the **Render UID** from a previous async generation
-3. Execute — returns the current status (`queued`, `processing`, `done`, `failed`) and `image_url` when complete
-
-### Generate a Video
-
-1. Select **Video** → **Generate**
-2. Set **Template ID** to a template that contains a video layer
-3. Add **Modifications** — picking a video object reveals **Video URL** (to swap
-   the clip) and a **Video Settings** collection for trim, timing and audio
-4. Set **Frame Rate** (1-60) and **Quality** (High / Balanced / Small). Leave
-   **Duration** at 0 to derive it from the layers — the longest clip, or 5
-   seconds, whichever is greater
-5. Under **Options**, enable **Wait for Completion** to poll until the MP4 is ready
-6. Execute — the output carries `video_url`, `poster_url`, `duration`, `fps` and
-   `frame_count`
-
-> Video renders are minutes of CPU, not milliseconds. The polling defaults are
-> higher than the image ones for that reason; raise **Max Poll Attempts** further
-> for long or high-frame-rate outputs.
-
-### Check Video Render Status
-
-1. Select **Video** → **Get Status**
-2. Enter the **Render UID** (video UIDs start with `vid_`)
-3. Execute — returns `status`, `progress` (0-100) and `video_url` when complete
-
-Image and video jobs are served from separate endpoints: an `img_` UID is not
-found by **Video → Get Status**, and vice versa.
+**Batch Request** is the one exception to the Fields form. A resource mapper
+describes a single set of values, and a batch needs a different set per output,
+so batch keeps a repeating **Items** list where each item has its own
+**Modifications** and optional per-item webhook.
 
 ---
 
-## Modifications
+## Waiting for a render
 
-When generating, you can modify template objects using these properties.
+**Synchronous Request** blocks the node until the file is ready, but the two
+resources get there differently, and only the video one needs a setting from you.
 
-Entering the **Template ID** first populates the **Name** dropdown with that
-template's editable objects, each tagged with its type, and the form then shows
-only the inputs that type accepts.
+**Image** renders inside the HTTP request and answers with the `image_url`.
+Nothing to configure.
 
-| Property          | Type    | Description                              |
-|-------------------|---------|------------------------------------------|
-| `name`            | string  | **Required.** Object name in template     |
-| `text`            | string  | Replacement text (text objects)           |
-| `image_url`       | string  | Replacement image URL (image objects)     |
-| `video_url`       | string  | Replacement clip URL (video objects)      |
-| `trim_start`      | number  | Seconds into the clip where playback starts |
-| `trim_end`        | number  | Seconds into the clip where playback stops  |
-| `start_at`        | number  | Seconds into the output before the layer appears |
-| `volume`          | number  | Audio volume, 0-2 (1 = original level)    |
-| `muted`           | boolean | Drop this layer's audio                   |
-| `loop`            | boolean | Repeat the clip to fill the output        |
-| `fontFamily`      | string  | Override font family                      |
-| `fontSize`        | number  | Override font size (1-1000)               |
-| `fontWeight`      | string  | Override font weight (e.g. "bold")        |
-| `fontStyle`       | string  | Override font style (e.g. "italic")       |
-| `fill`            | string  | Override fill color (e.g. "#FF0000")      |
-| `textAlign`       | string  | Override text alignment                   |
-| `lineHeight`      | number  | Override line height (0.1-10)             |
-| `height`          | number  | Override object height                    |
-| `charSpacing`     | number  | Override character spacing                |
-| `underline`       | boolean | Whether to set underline on the text      |
-| `opacity`         | number  | Override opacity (0-1)                    |
-| `backgroundColor` | string  | Override background color                 |
+**Video** cannot: encoding runs for minutes, and a request held open that long
+dies at any reverse proxy in front of Canolite. So the API always queues the job,
+and the node does the waiting by polling — which is why the video panel adds:
 
-`image_url` and `video_url` must be publicly reachable http(s) URLs — the API
-blocks private and loopback addresses, and drops such a modification with a
-warning rather than fetching it.
+| Field                         | Default | Meaning                                                        |
+|-------------------------------|---------|----------------------------------------------------------------|
+| **Max Wait Time (Seconds)**   | `600`   | Give up after this long. Type any value from 1 to 3600.        |
+| **Poll Interval (Seconds)**   | `5`     | Under **Options**. How often to check. Does not affect render speed. |
 
-Every field is optional bar `name`: an omitted key keeps whatever the template
-has. That is also why **Format**, **Quality**, **Scale** and **Duration** have
-an "inherit" default (`Template Default` / `0`) — the node omits them from the
-request rather than sending a value the API would reject.
+As a rough guide, a 15-second clip at 30fps takes a couple of minutes on modest
+hardware. Set **Max Wait Time** to cover your longest video, and make sure the
+workflow's own execution timeout is at least as generous.
+
+If the wait runs out, nothing is cancelled — the job keeps rendering on the
+server, and the error carries its UID so **Get Status** can still collect it.
+
+---
+
+## Usage examples
+
+### Render one image and use it immediately
+
+1. **Resource** → `Image`, **Operation** → `Synchronous Request`
+2. **Template** → pick your template from the list
+3. Fill in the **Fields** that appeared
+4. Execute — the output carries `image_url`
+
+### Render one video and wait for the MP4
+
+1. **Resource** → `Video` (the template list now shows only templates with a video layer)
+2. **Operation** → `Synchronous Request`
+3. **Template** → pick one, then fill in the **Fields**
+4. Set **Max Wait Time (Seconds)** to cover your longest render
+5. Execute — the output carries `video_url`, `poster_url`, `duration`, `fps` and `frame_count`
+
+### Fire and forget, collect later
+
+1. **Operation** → `Single Request` — the output is `{ uid, status: "queued" }`
+2. Later, **Operation** → `Get Status` with that **Render UID**, or set a
+   **Webhook URL** under **Options** and let Canolite call you
+
+### Batch from a spreadsheet
+
+1. **Operation** → `Batch Request`, pick the **Template**
+2. Add an **Item** per output, each with its own **Modifications**
+3. Execute — returns a batch UID and the individual render UIDs
+
+---
+
+## Upgrading from 1.x
+
+**2.0 is a clean break.** The panel was rebuilt around
+Resource → Operation → Template → Fields, and the old parameter names are gone,
+so Canolite nodes saved with 1.x need setting up again after the upgrade.
+
+What changed:
+
+- **Operations renamed.** `Generate` → **Single Request**, `Generate (Synchronous)` → **Synchronous Request**, `Batch Generate` → **Batch Request**.
+- **Video gained a Synchronous Request.** 1.x had none.
+- **`Wait for Completion` is gone.** Choosing `Single Request` vs `Synchronous Request` is now the whole decision. The video wait is a plain **Max Wait Time (Seconds)** instead of Poll Interval × Max Poll Attempts.
+- **The Template resource is gone.** Templates are browsed from the **Template** picker itself; `has_video` filtering happens automatically when the resource is `Video`.
+- **Modifications became Fields.** Instead of adding rows and picking an object per row, the template's objects are rendered as inputs directly. The old list survives only inside **Batch Request** items.
 
 ---
 

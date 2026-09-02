@@ -6,20 +6,34 @@ import {
 	type INodeType,
 	type INodeTypeDescription,
 } from 'n8n-workflow';
-import { imageDescription } from './resources/image';
-import { templateDescription } from './resources/template';
-import { videoDescription } from './resources/video';
+import { renderProperties } from './resources/render';
+import { extractTemplateId, getTemplateFieldSchema, searchTemplates } from './shared/template';
 
 export class Canolite implements INodeType {
 	methods = {
+		listSearch: {
+			// Powers the Template picker's "From List" mode.
+			searchTemplates,
+		},
+
+		resourceMapping: {
+			// Turns the chosen template's objects into the Fields form.
+			getTemplateFieldSchema,
+		},
+
 		loadOptions: {
 			/**
-			 * Fetches the modifiable objects for the currently entered Template ID
-			 * and exposes them as dropdown options for the modification "Name" field.
-			 * Reloads whenever the Template ID changes (see loadOptionsDependsOn).
+			 * Object dropdown for the Batch operation's Modifications list, which
+			 * cannot use the resource mapper — a mapper describes one set of values,
+			 * and a batch needs one per output.
+			 *
+			 * The type is encoded into the value ("dealer_name|text") so the
+			 * modification form shows only the relevant input: Text vs Image URL vs
+			 * Video URL. The trailing "|type" is stripped again before the request is
+			 * sent.
 			 */
 			async getTemplateFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const templateId = (this.getNodeParameter('templateId', '') as string)?.trim();
+				const templateId = extractTemplateId(this.getNodeParameter('templateId', ''));
 				if (!templateId) {
 					return [];
 				}
@@ -46,9 +60,6 @@ export class Canolite implements INodeType {
 				return fields
 					.filter((field) => field?.name)
 					.map((field) => ({
-						// The type is encoded into the value (e.g. "dealer_name|text") so the
-						// modification form can show only the relevant input (Text vs Image URL).
-						// The trailing "|type" is stripped again before the request is sent.
 						name: field.type ? `${field.name} (${field.type})` : field.name,
 						value: field.type ? `${field.name}|${field.type}` : field.name,
 					}));
@@ -61,7 +72,10 @@ export class Canolite implements INodeType {
 		name: 'canolite',
 		icon: { light: 'file:../../icons/canolite.svg', dark: 'file:../../icons/canolite.dark.svg' },
 		group: ['output'],
-		version: 1,
+		// 2 is a clean break from 1.x: the panel is now Resource → Operation →
+		// Template → Fields, and the old parameter names are gone. Workflows built
+		// on 1.x need their Canolite nodes set up again.
+		version: 2,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description: 'Generate images and videos from templates using the Canolite API',
 		defaults: {
@@ -83,31 +97,6 @@ export class Canolite implements INodeType {
 				'Content-Type': 'application/json',
 			},
 		},
-		properties: [
-			{
-				displayName: 'Resource',
-				name: 'resource',
-				type: 'options',
-				noDataExpression: true,
-				options: [
-					{
-						name: 'Image',
-						value: 'image',
-					},
-					{
-						name: 'Template',
-						value: 'template',
-					},
-					{
-						name: 'Video',
-						value: 'video',
-					},
-				],
-				default: 'image',
-			},
-			...imageDescription,
-			...templateDescription,
-			...videoDescription,
-		],
+		properties: renderProperties,
 	};
 }
