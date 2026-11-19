@@ -6,6 +6,20 @@ Design templates visually in the Canolite editor, then generate images and MP4 v
 
 ---
 
+## What's new in 2.1
+
+- **Real error messages.** A failed render now says why — e.g. `Render failed: Remote image returned HTTP 403` — instead of n8n's generic *"Your request is invalid or could not be processed by the service"*. See [Errors](#errors) and [Troubleshooting](#troubleshooting).
+- **Template resource** — list your templates (**Get Many**) or read one with its editable fields (**Get**).
+- **Wait for Completion** for **Batch** (one output item per finished image/video) and **Get Status**.
+- **Download File** — attach the finished image or MP4 as binary data for Gmail, Google Drive, Slack…
+- **Fail on Warnings** and **Fail If Any Job Fails** options.
+- **Video Scale**, and Scale up to **4x** for images and video.
+- Video **Frame Rate** and **Quality** now default to **Template Default**, so your template's and project's video settings are respected.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
+---
+
 ## Installation
 
 ### In n8n (Community Nodes)
@@ -15,14 +29,20 @@ Design templates visually in the Canolite editor, then generate images and MP4 v
 3. Enter `n8n-nodes-canolite`
 4. Click **Install**
 
+### Updating
+
+**Settings → Community Nodes → n8n-nodes-canolite → Update**, then reload the
+editor. Existing 2.x workflows keep working; no nodes need to be set up again.
+
 ### Manual Installation
 
 ```bash
-cd ~/.n8n/custom
+mkdir -p ~/.n8n/nodes && cd ~/.n8n/nodes
 npm install n8n-nodes-canolite
 ```
 
-Restart n8n after installation.
+Restart n8n after installation. In Docker, run this inside the container's
+`/home/node/.n8n/nodes` folder (on a mounted volume, so it survives restarts).
 
 ---
 
@@ -165,8 +185,27 @@ hint about what to do:
 | Wrong template ID / render UID (404) | `Template not found` / `Render job not found` |
 | Server busy (429) | `Canolite is busy…` with the Retry-After time — turn on **Retry On Fail** in node settings |
 | Base URL points somewhere else, or a proxy error page | `Canolite returned HTTP 502 with a non-JSON response` and how to fix the Base URL |
+| Canolite can't be reached at all | `Could not reach Canolite at https://…` |
+| A failed job while waiting (Get Status / Batch) | The item comes back with `status: "failed"` and `error` (Synchronous Request fails the node instead) |
+
+The template picker and the **Fields** form use the same messages, so a wrong key
+or Base URL is explained right in the editor.
 
 `Continue On Fail` / **On Error → Continue** work as usual.
+
+---
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Render failed: Remote image returned HTTP 403` (or 400) | The image host refused the download. Many sites block hotlinking (e.g. Pixabay, Wikimedia). | Upload the image to Canolite, or use a host that allows direct downloads. For Google Drive, share the file as *Anyone with the link* and use a direct-download link. |
+| `Render failed: Some layers could not be opened. Check that these image layers point to…` | An image layer's source can't be loaded by the renderer. The message names the layer. | Re-upload that image in the Canolite editor, or replace it with a public `image_url` field. |
+| `Render failed: … Chromium sandboxing failed! … No usable sandbox` | Canolite 1.12.0–1.12.1 running in Docker / Coolify. | Update Canolite to **1.12.2 or later** and redeploy. |
+| `Canolite rejected the request: Template does not contain video layers` | A Video operation on an image-only template. | Use the **Image** resource, or add a video layer to the template. |
+| `Render … did not complete within 600s` | The video took longer than **Max Wait Time**. | Raise **Max Wait Time**; the job keeps rendering, and **Get Status** with its UID can still collect it. |
+| `Canolite reported N warning(s)` | **Fail on Warnings** is on and Canolite warned (e.g. a field name that matches no layer). | Fix the field names in the template, or turn the option off — warnings are then returned in the `warnings` field. |
+| `Could not download https://…` (Download File) | n8n can't reach the URL Canolite returned. | Set `APP_URL` in Canolite to the public address n8n uses. |
 
 ---
 
@@ -201,6 +240,26 @@ hint about what to do:
 4. Or turn on **Options → Wait for Completion** (and **Download File**) to get one
    item per finished image, ready for the next node
 
+### Render an image and email it
+
+1. **Image** → **Synchronous Request**, pick the template, fill in the **Fields**
+2. **Options → Download File** on (binary property `data`)
+3. Connect a **Gmail** (or **Send Email**) node and attach the binary property `data`
+
+### Collect a queued render later and save it to Drive
+
+1. **Single Request** → output `{ uid, status: "queued" }`
+2. Next node: **Get Status** with **Render UID** = `{{ $json.uid }}`,
+   **Options → Wait for Completion** and **Download File** on
+3. Connect **Google Drive → Upload** with the binary property `data`
+
+### List templates in a workflow
+
+1. **Resource** → `Template`, **Operation** → `Get Many`
+2. Optional **Filters** → *Search* or *Video Templates Only*
+3. Each template becomes one item with `template_id`, `name`, `width`, `height`
+   and `has_video`; use **Get** to read a template's editable `fields`
+
 ---
 
 ## Upgrading from 1.x
@@ -213,7 +272,7 @@ What changed:
 
 - **Operations renamed.** `Generate` → **Single Request**, `Generate (Synchronous)` → **Synchronous Request**, `Batch Generate` → **Batch Request**.
 - **Video gained a Synchronous Request.** 1.x had none.
-- **`Wait for Completion` is gone.** Choosing `Single Request` vs `Synchronous Request` is now the whole decision. The video wait is a plain **Max Wait Time (Seconds)** instead of Poll Interval × Max Poll Attempts.
+- **Waiting is chosen by operation.** `Single Request` returns straight away and `Synchronous Request` waits. The video wait is a plain **Max Wait Time (Seconds)** instead of Poll Interval × Max Poll Attempts. (2.1 adds **Wait for Completion** back as an option on **Batch** and **Get Status**.)
 - **Templates are browsed from the Template picker.** `has_video` filtering happens automatically when the resource is `Video`. (2.1 adds a read-only **Template** resource back for listing templates in a workflow.)
 - **Modifications became Fields.** Instead of adding rows and picking an object per row, the template's objects are rendered as inputs directly. The old list survives only inside **Batch Request** items.
 
@@ -234,8 +293,10 @@ What changed:
 
 ## Compatibility
 
-- **n8n**: 1.0+
-- **Canolite**: 1.0+ (API v1) — the **Video** resource requires Canolite 1.8+; video **Scale** and Scale 4 need 1.11+. Tested against Canolite 1.12.
+- **n8n**: 1.0+ (tested on n8n 2.48)
+- **Canolite**: 1.0+ (API v1) — the **Video** resource requires Canolite 1.8+; video **Scale** and Scale 4 need 1.11+.
+  **Recommended: Canolite 1.12.2 or later** — 1.12.0 and 1.12.1 cannot render inside Docker / Coolify.
+  Tested against Canolite 1.12.2.
 
 ---
 
