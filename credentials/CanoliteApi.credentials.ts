@@ -22,7 +22,8 @@ export class CanoliteApi implements ICredentialType {
 			type: 'string',
 			default: 'http://localhost:3000',
 			placeholder: 'e.g. https://canolite.example.com',
-			description: 'The base URL of your Canolite instance',
+			description:
+				'The root URL of your Canolite instance, the same address you open in the browser — without /api or /v1',
 		},
 		{
 			displayName: 'API Key',
@@ -33,7 +34,7 @@ export class CanoliteApi implements ICredentialType {
 			},
 			default: '',
 			placeholder: 'e.g. sk_live_abc123',
-			description: 'Your Canolite API key',
+			description: 'An API key from Canolite → API Keys (starts with sk_live_)',
 		},
 	];
 
@@ -41,14 +42,15 @@ export class CanoliteApi implements ICredentialType {
 		type: 'generic',
 		properties: {
 			headers: {
-				Authorization: '=Bearer {{$credentials?.apiKey}}',
+				// Trimmed: a key pasted with a trailing space or newline is a 401.
+				Authorization: '=Bearer {{ String($credentials?.apiKey ?? "").trim() }}',
 			},
 		},
 	};
 
 	test: ICredentialTestRequest = {
 		request: {
-			baseURL: '={{$credentials?.baseUrl}}',
+			baseURL: '={{ String($credentials?.baseUrl ?? "").replace(/\\/+$/, "") }}',
 			url: '/v1/templates',
 			method: 'GET',
 		},

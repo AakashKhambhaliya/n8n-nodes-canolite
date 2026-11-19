@@ -7,6 +7,7 @@ import {
 	type INodeTypeDescription,
 } from 'n8n-workflow';
 import { renderProperties } from './resources/render';
+import { templateProperties } from './resources/template';
 import { extractTemplateId, getTemplateFieldSchema, searchTemplates } from './shared/template';
 
 export class Canolite implements INodeType {
@@ -91,12 +92,17 @@ export class Canolite implements INodeType {
 			},
 		],
 		requestDefaults: {
-			baseURL: '={{$credentials?.baseUrl}}',
+			// A trailing slash in the credential would otherwise produce "//v1/…".
+			baseURL: '={{ String($credentials?.baseUrl ?? "").replace(/\\/+$/, "") }}',
 			headers: {
 				Accept: 'application/json',
 				'Content-Type': 'application/json',
 			},
+			// Canolite's JSON error body carries the real reason (e.g. "Remote image
+			// returned HTTP 403"). n8n's default status handling discards it, so every
+			// operation runs checkApiResponse instead, which throws a readable error.
+			ignoreHttpStatusErrors: true,
 		},
-		properties: renderProperties,
+		properties: [...renderProperties.slice(0, 1), ...templateProperties, ...renderProperties.slice(1)],
 	};
 }

@@ -56,8 +56,8 @@ export const outputFields: INodeProperties[] = [
 		name: 'scale',
 		type: 'number',
 		default: 0,
-		typeOptions: { minValue: 0, maxValue: 3 },
-		description: 'Render scale factor 1-3. Leave at 0 to use the template’s own setting.',
+		typeOptions: { minValue: 0, maxValue: 4 },
+		description: 'Render scale factor 1-4. Leave at 0 to use the template’s own setting.',
 		routing: {
 			send: {
 				type: 'body',

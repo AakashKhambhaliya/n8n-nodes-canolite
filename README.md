@@ -32,8 +32,10 @@ You need a Canolite API key. Create one in your Canolite dashboard under **API K
 
 | Field     | Description                                           | Example                      |
 |-----------|-------------------------------------------------------|------------------------------|
-| Base URL  | The URL of your Canolite instance                     | `http://localhost:3000`      |
+| Base URL  | The root URL of your Canolite instance — the address you open in the browser, without `/api` or `/v1` | `https://canolite.example.com` |
 | API Key   | Your API key (starts with `sk_live_`)                 | `sk_live_abc123...`          |
+
+A trailing slash in the Base URL, or whitespace around a pasted key, is handled for you.
 
 ---
 
@@ -43,7 +45,7 @@ Every job follows the same four steps, top to bottom:
 
 **Resource** → **Operation** → **Template** → **Fields**
 
-1. **Resource** — `Image` or `Video`
+1. **Resource** — `Image`, `Video` or `Template`
 2. **Operation** — `Single Request`, `Synchronous Request`, `Batch Request` or `Get Status`
 3. **Template** — pick it from the list, or switch to **By ID** to paste/expression a `tmpl_...`
 4. **Fields** — the template's own objects, loaded live and rendered as one labelled input each
@@ -62,11 +64,30 @@ Nothing else is required. Encoder settings and the webhook live below that, and
 
 The two resources offer the same four operations. What differs:
 
-- **Image** adds **Format** (PNG / JPEG / WebP), **Quality** (1-100) and **Scale** (1-3)
-- **Video** adds **Frame Rate** (1-60), **Duration** and a **Quality** preset (High / Balanced / Small), and requires **Canolite 1.8+** with a template that contains a video layer
+- **Image** adds **Format** (PNG / JPEG / WebP), **Quality** (1-100) and **Scale** (1-4)
+- **Video** adds **Frame Rate** (1-60), **Duration**, a **Quality** preset (High / Balanced / Small) and **Scale** (1-4), and requires **Canolite 1.8+** with a template that contains a video layer
+
+Every output setting defaults to **Template Default** (or `0`), which leaves it out
+of the request so Canolite applies its own precedence: project defaults → template
+settings → this request.
 
 Image and video jobs live on separate endpoints, so an `img_` UID is not found
 under **Video → Get Status**, and a `vid_` UID is not found under **Image**.
+
+The **Template** resource has **Get Many** (with Return All / Limit, a name search and
+a *Video Templates Only* filter) and **Get**, which returns the template with its
+editable `fields` — handy for building modifications dynamically.
+
+### Options
+
+| Option                    | Operations                         | What it does |
+|---------------------------|------------------------------------|--------------|
+| **Wait for Completion**   | Batch, Get Status                  | Waits until the job(s) finish. Batch then outputs **one item per job** with its `image_url` / `video_url`. |
+| **Max Wait Time / Poll Interval** | Batch, Get Status (and video Synchronous) | How long to wait and how often to check. |
+| **Fail If Any Job Fails** | Batch                              | Off: failed jobs come back as items with `status: "failed"` and their `error`. On: the node fails. |
+| **Download File**         | Synchronous, Batch, Get Status     | Downloads the finished file into binary data (property **Binary Property**, default `data`) for Gmail, Drive, Slack… |
+| **Fail on Warnings**      | Single, Synchronous, Batch         | Treats Canolite warnings (unknown field name, refused `image_url`) as errors. |
+| **Webhook URL**           | Single, Synchronous                | Canolite calls this URL when the render finishes. |
 
 ---
 
@@ -127,6 +148,25 @@ workflow's own execution timeout is at least as generous.
 
 If the wait runs out, nothing is cancelled — the job keeps rendering on the
 server, and the error carries its UID so **Get Status** can still collect it.
+A brief network or 5xx blip while polling is retried rather than failing the node.
+
+---
+
+## Errors
+
+The node shows Canolite's own error message, not a generic HTTP sentence, plus a
+hint about what to do:
+
+| Situation | What you see |
+|-----------|--------------|
+| A synchronous render failed (HTTP 422) | `Render failed: Remote image returned HTTP 403` — the reason, the render UID, and any warnings |
+| Bad parameters (400) | `Canolite rejected the request: Validation error` with each invalid field listed |
+| Bad or revoked API key (401) | `Canolite rejected the API key` |
+| Wrong template ID / render UID (404) | `Template not found` / `Render job not found` |
+| Server busy (429) | `Canolite is busy…` with the Retry-After time — turn on **Retry On Fail** in node settings |
+| Base URL points somewhere else, or a proxy error page | `Canolite returned HTTP 502 with a non-JSON response` and how to fix the Base URL |
+
+`Continue On Fail` / **On Error → Continue** work as usual.
 
 ---
 
@@ -158,6 +198,8 @@ server, and the error carries its UID so **Get Status** can still collect it.
 1. **Operation** → `Batch Request`, pick the **Template**
 2. Add an **Item** per output, each with its own **Modifications**
 3. Execute — returns a batch UID and the individual render UIDs
+4. Or turn on **Options → Wait for Completion** (and **Download File**) to get one
+   item per finished image, ready for the next node
 
 ---
 
@@ -172,7 +214,7 @@ What changed:
 - **Operations renamed.** `Generate` → **Single Request**, `Generate (Synchronous)` → **Synchronous Request**, `Batch Generate` → **Batch Request**.
 - **Video gained a Synchronous Request.** 1.x had none.
 - **`Wait for Completion` is gone.** Choosing `Single Request` vs `Synchronous Request` is now the whole decision. The video wait is a plain **Max Wait Time (Seconds)** instead of Poll Interval × Max Poll Attempts.
-- **The Template resource is gone.** Templates are browsed from the **Template** picker itself; `has_video` filtering happens automatically when the resource is `Video`.
+- **Templates are browsed from the Template picker.** `has_video` filtering happens automatically when the resource is `Video`. (2.1 adds a read-only **Template** resource back for listing templates in a workflow.)
 - **Modifications became Fields.** Instead of adding rows and picking an object per row, the template's objects are rendered as inputs directly. The old list survives only inside **Batch Request** items.
 
 ---
@@ -193,7 +235,7 @@ What changed:
 ## Compatibility
 
 - **n8n**: 1.0+
-- **Canolite**: 1.0+ (API v1) — the **Video** resource requires Canolite 1.8+
+- **Canolite**: 1.0+ (API v1) — the **Video** resource requires Canolite 1.8+; video **Scale** and Scale 4 need 1.11+. Tested against Canolite 1.12.
 
 ---
 

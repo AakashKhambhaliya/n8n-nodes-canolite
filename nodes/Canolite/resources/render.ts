@@ -2,7 +2,8 @@ import type { INodeProperties } from 'n8n-workflow';
 import { buildModificationsExpression, modificationFields } from '../shared/modifications';
 import { outputFields } from '../shared/outputFields';
 import { videoOutputFields } from '../shared/videoOutputFields';
-import { waitForRenderCompletion } from '../shared/pollRender';
+import { downloadOutput, waitForBatch, waitForRenderCompletion } from '../shared/pollRender';
+import { checkApiResponse } from '../shared/apiErrors';
 import {
 	buildFieldsExpression,
 	TEMPLATE_ID_EXPRESSION,
@@ -31,6 +32,23 @@ export const VIDEO_SYNC_DEFAULTS = {
 	pollIntervalSeconds: 5,
 };
 
+/** Waiting on Get Status / Batch: images finish in seconds, so poll faster. */
+const WAIT_DEFAULTS = {
+	image: { maxWaitSeconds: 600, pollIntervalSeconds: 2 },
+	video: { maxWaitSeconds: 1800, pollIntervalSeconds: 5 },
+};
+
+/** Get Status → "Wait for Completion" reports a failed job instead of failing the node. */
+const waitOnStatus = (kind: 'image' | 'video') =>
+	waitForRenderCompletion(
+		kind,
+		'options.maxWaitTime',
+		'options.pollInterval',
+		WAIT_DEFAULTS[kind],
+		'options.waitForCompletion',
+		false,
+	);
+
 export const resourceSelector: INodeProperties = {
 	displayName: 'Resource',
 	name: 'resource',
@@ -42,6 +60,11 @@ export const resourceSelector: INodeProperties = {
 			name: 'Video',
 			value: 'video',
 			description: 'Render an MP4 from a template that contains a video layer',
+		},
+		{
+			name: 'Template',
+			value: 'template',
+			description: 'List templates or read one template and its editable fields',
 		},
 	],
 	default: 'image',
@@ -63,6 +86,7 @@ const imageOperations: INodeProperties = {
 			description: 'Queue one image and return its job UID straight away',
 			routing: {
 				request: { method: 'POST', url: '=/v1/images' },
+				output: { postReceive: [checkApiResponse] },
 			},
 		},
 		{
@@ -72,6 +96,7 @@ const imageOperations: INodeProperties = {
 			description: 'Render one image and wait for the finished image_url',
 			routing: {
 				request: { method: 'POST', url: '=/v1/images' },
+				output: { postReceive: [checkApiResponse, downloadOutput('image')] },
 			},
 		},
 		{
@@ -81,6 +106,9 @@ const imageOperations: INodeProperties = {
 			description: 'Queue up to 500 images from one template in a single request',
 			routing: {
 				request: { method: 'POST', url: '=/v1/images/batch' },
+				output: {
+					postReceive: [checkApiResponse, waitForBatch('image', WAIT_DEFAULTS.image), downloadOutput('image')],
+				},
 			},
 		},
 		{
@@ -89,7 +117,11 @@ const imageOperations: INodeProperties = {
 			action: 'Get image render status',
 			description: 'Look up a queued render by its job UID',
 			routing: {
-				request: { method: 'GET', url: '=/v1/images/{{$parameter.renderUid}}' },
+				request: {
+					method: 'GET',
+					url: '=/v1/images/{{ encodeURIComponent(String($parameter.renderUid).trim()) }}',
+				},
+				output: { postReceive: [checkApiResponse, waitOnStatus('image'), downloadOutput('image')] },
 			},
 		},
 	],
@@ -112,6 +144,7 @@ const videoOperations: INodeProperties = {
 			description: 'Queue one video and return its job UID straight away',
 			routing: {
 				request: { method: 'POST', url: '=/v1/videos' },
+				output: { postReceive: [checkApiResponse] },
 			},
 		},
 		{
@@ -128,12 +161,9 @@ const videoOperations: INodeProperties = {
 				// from the workflow's point of view, on a deadline we control.
 				output: {
 					postReceive: [
-						waitForRenderCompletion(
-							'video',
-							'maxWaitTime',
-							'options.pollInterval',
-							VIDEO_SYNC_DEFAULTS,
-						),
+						checkApiResponse,
+						waitForRenderCompletion('video', 'maxWaitTime', 'options.pollInterval', VIDEO_SYNC_DEFAULTS),
+						downloadOutput('video'),
 					],
 				},
 			},
@@ -145,6 +175,9 @@ const videoOperations: INodeProperties = {
 			description: 'Queue up to 20 videos from one template in a single request',
 			routing: {
 				request: { method: 'POST', url: '=/v1/videos/batch' },
+				output: {
+					postReceive: [checkApiResponse, waitForBatch('video', WAIT_DEFAULTS.video), downloadOutput('video')],
+				},
 			},
 		},
 		{
@@ -153,7 +186,11 @@ const videoOperations: INodeProperties = {
 			action: 'Get video render status',
 			description: 'Look up a queued render by its job UID',
 			routing: {
-				request: { method: 'GET', url: '=/v1/videos/{{$parameter.renderUid}}' },
+				request: {
+					method: 'GET',
+					url: '=/v1/videos/{{ encodeURIComponent(String($parameter.renderUid).trim()) }}',
+				},
+				output: { postReceive: [checkApiResponse, waitOnStatus('video'), downloadOutput('video')] },
 			},
 		},
 	],
@@ -300,10 +337,65 @@ const options: INodeProperties = {
 	type: 'collection',
 	placeholder: 'Add Option',
 	displayOptions: {
-		show: { resource: BOTH_RESOURCES, operation: RENDER_OPERATIONS },
+		show: { resource: BOTH_RESOURCES, operation: [...RENDER_OPERATIONS, 'getStatus'] },
 	},
 	default: {},
 	options: [
+		{
+			displayName: 'Binary Property',
+			name: 'binaryPropertyName',
+			type: 'string',
+			default: 'data',
+			displayOptions: {
+				show: { '/operation': ['sync', 'batch', 'getStatus'] },
+			},
+			description: 'Name of the binary property to write the downloaded file to',
+		},
+		{
+			displayName: 'Download File',
+			name: 'download',
+			type: 'boolean',
+			default: false,
+			displayOptions: {
+				show: { '/operation': ['sync', 'batch', 'getStatus'] },
+			},
+			description:
+				'Whether to download the finished image or video into binary data, ready for nodes like Gmail, Google Drive or Slack. Only finished jobs are downloaded — for Batch and Get Status, also turn on Wait for Completion.',
+		},
+		{
+			displayName: 'Fail If Any Job Fails',
+			name: 'failIfAnyJobFails',
+			type: 'boolean',
+			default: false,
+			displayOptions: {
+				show: { '/operation': ['batch'] },
+			},
+			description:
+				'Whether a single failed job fails the whole node. Off: with Wait for Completion, failed jobs are returned with status "failed" and their error.',
+		},
+		{
+			displayName: 'Fail on Warnings',
+			name: 'failOnWarnings',
+			type: 'boolean',
+			default: false,
+			displayOptions: {
+				show: { '/operation': RENDER_OPERATIONS },
+			},
+			description:
+				'Whether to fail the node when Canolite reports warnings — e.g. a field name that matches no layer, or an image_url it refused to fetch. Off: warnings are returned in the "warnings" field and the render continues.',
+		},
+		{
+			displayName: 'Max Wait Time (Seconds)',
+			name: 'maxWaitTime',
+			type: 'number',
+			default: 600,
+			typeOptions: { minValue: 1, maxValue: 7200 },
+			displayOptions: {
+				show: { '/operation': ['batch', 'getStatus'] },
+			},
+			description:
+				'With Wait for Completion: how long to wait before failing the node. Jobs keep rendering on the server either way.',
+		},
 		{
 			displayName: 'Poll Interval (Seconds)',
 			name: 'pollInterval',
@@ -311,10 +403,21 @@ const options: INodeProperties = {
 			default: 5,
 			typeOptions: { minValue: 1, maxValue: 300 },
 			displayOptions: {
-				show: { '/resource': ['video'], '/operation': ['sync'] },
+				show: { '/operation': ['sync', 'batch', 'getStatus'] },
 			},
 			description:
-				'How often to check whether the render has finished. Only changes how quickly the node notices completion, not how fast the render runs.',
+				'How often to check whether the render has finished (video Synchronous Request, and Wait for Completion). Only changes how quickly the node notices completion, not how fast the render runs. A synchronous image renders inside the request and does not poll.',
+		},
+		{
+			displayName: 'Wait for Completion',
+			name: 'waitForCompletion',
+			type: 'boolean',
+			default: false,
+			displayOptions: {
+				show: { '/operation': ['batch', 'getStatus'] },
+			},
+			description:
+				'Whether to wait until the job(s) finish. Batch then outputs one item per job, with its image_url / video_url.',
 		},
 		{
 			displayName: 'Webhook URL',
@@ -324,13 +427,13 @@ const options: INodeProperties = {
 			placeholder: 'e.g. https://example.com/webhook',
 			displayOptions: {
 				// Batch carries a webhook per item instead — the batch endpoints have
-				// no top-level webhook_url and reject one.
+				// no top-level webhook_url.
 				show: { '/operation': ['single', 'sync'] },
 			},
 			description:
-				'URL to notify when rendering completes or fails. Must be publicly reachable — the API rejects private and loopback addresses.',
+				'URL to notify when rendering completes or fails. Must be publicly reachable — the API rejects private and loopback addresses. Only the webhook saved in Canolite Settings is signed.',
 			routing: {
-				send: { type: 'body', property: 'webhook_url' },
+				send: { type: 'body', property: 'webhook_url', value: '={{ $value || undefined }}' },
 			},
 		},
 	],
