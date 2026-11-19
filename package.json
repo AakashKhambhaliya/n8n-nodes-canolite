@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-canolite",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "n8n community node for Canolite — self-hosted template-to-image and video generation platform",
   "keywords": [
     "n8n-community-node-package",

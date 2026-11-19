@@ -2,6 +2,7 @@ import {
 	NodeApiError,
 	NodeOperationError,
 	type IExecuteSingleFunctions,
+	type ILoadOptionsFunctions,
 	type IN8nHttpFullResponse,
 	type INode,
 	type INodeExecutionData,
@@ -181,6 +182,44 @@ export function apiError(
 		description,
 		httpCode: String(statusCode),
 	});
+}
+
+/**
+ * GET a Canolite API path from editor-side code (template picker, Fields
+ * loader, field dropdowns), with the same readable errors as operations.
+ * Those helpers call the API directly, outside requestDefaults, so without
+ * this a bad key or Base URL showed only "Request failed with status code 401".
+ */
+export async function canoliteGet<T>(this: ILoadOptionsFunctions, path: string): Promise<T> {
+	const credentials = await this.getCredentials('canoliteApi');
+	const baseUrl = String(credentials.baseUrl ?? '').replace(/\/+$/, '');
+	let response: IN8nHttpFullResponse;
+	try {
+		response = (await this.helpers.httpRequestWithAuthentication.call(this, 'canoliteApi', {
+			method: 'GET',
+			url: `${baseUrl}${path}`,
+			json: true,
+			returnFullResponse: true,
+			ignoreHttpStatusErrors: true,
+		})) as IN8nHttpFullResponse;
+	} catch (error) {
+		throw new NodeOperationError(this.getNode(), `Could not reach Canolite at ${baseUrl || '(no Base URL)'}`, {
+			description: `${(error as Error).message}. Check the Base URL in the Canolite credentials and that the server is running.`,
+		});
+	}
+	const statusCode = Number(response.statusCode) || 0;
+	if (statusCode >= 400) {
+		const { message, description } = explainApiError(statusCode, response.body, response.headers);
+		throw new NodeOperationError(this.getNode(), message, { description });
+	}
+	const { json } = parseBody(response.body);
+	if (!json) {
+		throw new NodeOperationError(this.getNode(), 'Canolite returned a non-JSON response', {
+			description:
+				'Check that the Base URL in the credentials is the root of your Canolite instance (e.g. https://canolite.example.com, without /api or /v1).',
+		});
+	}
+	return json as T;
 }
 
 /**

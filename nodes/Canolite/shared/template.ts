@@ -6,6 +6,7 @@ import {
 	type ResourceMapperField,
 	type ResourceMapperFields,
 } from 'n8n-workflow';
+import { canoliteGet } from './apiErrors';
 
 /** A template object as the API reports it on GET /v1/templates/:id. */
 interface TemplateField {
@@ -54,23 +55,21 @@ async function fetchTemplate(
 	this: ILoadOptionsFunctions,
 	templateId: string,
 ): Promise<TemplateResponse> {
-	const credentials = await this.getCredentials('canoliteApi');
-	const baseUrl = String(credentials.baseUrl ?? '').replace(/\/+$/, '');
-
 	try {
-		return (await this.helpers.httpRequestWithAuthentication.call(this, 'canoliteApi', {
-			method: 'GET',
-			url: `${baseUrl}/v1/templates/${encodeURIComponent(templateId)}`,
-			json: true,
-		})) as TemplateResponse;
-	} catch (error) {
-		throw new NodeOperationError(
-			this.getNode(),
-			`Could not load template "${templateId}": ${(error as Error).message}`,
-			{ description: 'Check that the Template ID and your Canolite credentials are correct.' },
+		return await canoliteGet.call<ILoadOptionsFunctions, [string], Promise<TemplateResponse>>(
+			this,
+			`/v1/templates/${encodeURIComponent(templateId)}`,
 		);
+	} catch (error) {
+		const e = error as NodeOperationError;
+		throw new NodeOperationError(this.getNode(), `Could not load template "${templateId}": ${e.message}`, {
+			description: e.description ?? 'Check that the Template ID and your Canolite credentials are correct.',
+		});
 	}
 }
+
+/** Same request, exported for the batch field dropdown in Canolite.node.ts. */
+export const loadTemplate = fetchTemplate;
 
 /**
  * Template picker.
@@ -233,14 +232,10 @@ export async function searchTemplates(
 	this: ILoadOptionsFunctions,
 	filter?: string,
 ): Promise<INodeListSearchResult> {
-	const credentials = await this.getCredentials('canoliteApi');
-	const baseUrl = String(credentials.baseUrl ?? '').replace(/\/+$/, '');
-
-	const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'canoliteApi', {
-		method: 'GET',
-		url: `${baseUrl}/v1/templates`,
-		json: true,
-	})) as TemplateListResponse;
+	const response = await canoliteGet.call<ILoadOptionsFunctions, [string], Promise<TemplateListResponse>>(
+		this,
+		'/v1/templates',
+	);
 
 	const templates = Array.isArray(response?.templates) ? response.templates : [];
 	const needle = filter?.toLowerCase();

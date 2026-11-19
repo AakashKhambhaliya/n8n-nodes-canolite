@@ -1,6 +1,5 @@
 import {
 	NodeConnectionTypes,
-	NodeOperationError,
 	type ILoadOptionsFunctions,
 	type INodePropertyOptions,
 	type INodeType,
@@ -8,7 +7,12 @@ import {
 } from 'n8n-workflow';
 import { renderProperties } from './resources/render';
 import { templateProperties } from './resources/template';
-import { extractTemplateId, getTemplateFieldSchema, searchTemplates } from './shared/template';
+import {
+	extractTemplateId,
+	getTemplateFieldSchema,
+	loadTemplate,
+	searchTemplates,
+} from './shared/template';
 
 export class Canolite implements INodeType {
 	methods = {
@@ -39,27 +43,10 @@ export class Canolite implements INodeType {
 					return [];
 				}
 
-				const credentials = await this.getCredentials('canoliteApi');
-				const baseUrl = String(credentials.baseUrl ?? '').replace(/\/+$/, '');
-
-				let response;
-				try {
-					response = (await this.helpers.httpRequestWithAuthentication.call(this, 'canoliteApi', {
-						method: 'GET',
-						url: `${baseUrl}/v1/templates/${encodeURIComponent(templateId)}`,
-						json: true,
-					})) as { fields?: Array<{ name: string; type?: string }> };
-				} catch (error) {
-					throw new NodeOperationError(
-						this.getNode(),
-						`Could not load objects for template "${templateId}": ${(error as Error).message}`,
-						{ description: 'Check that the Template ID and your Canolite credentials are correct.' },
-					);
-				}
-
+				const response = await loadTemplate.call(this, templateId);
 				const fields = Array.isArray(response?.fields) ? response.fields : [];
 				return fields
-					.filter((field) => field?.name)
+					.filter((field): field is { name: string; type?: string } => Boolean(field?.name))
 					.map((field) => ({
 						name: field.type ? `${field.name} (${field.type})` : field.name,
 						value: field.type ? `${field.name}|${field.type}` : field.name,
